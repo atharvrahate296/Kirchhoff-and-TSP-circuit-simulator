@@ -2,6 +2,7 @@
 
 ## 1. Project Overview
 
+Th
 This interactive application provides a hands-on environment for visualizing and solving two classic problems rooted in graph theory: **Kirchhoff's Circuit Laws** and the **Traveling Salesman Problem (TSP)**. Built with C and GTK+, it serves as an educational tool to understand complex algorithms and electrical principles through a user-friendly graphical interface with native performance.
 
 ---
@@ -69,12 +70,19 @@ The project is organized into multiple C source and header files:
 
 ### Installation Instructions for Windows
 
-**Step 1: Install MSYS2**
+**Step 1: Clone the Repository**
+Open Command Prompt or PowerShell and run:
+```bash
+git clone https://github.com/atharvrahate296/Kirchhoff-and-TSP-circuit-simulator
+cd Kirchhoff-and-TSP-circuit-simulator
+```
+
+**Step 2: Install MSYS2**
 - Download from: https://www.msys2.org/
 - Run the installer and install to `C:\msys64`
 - Follow the installation wizard
 
-**Step 2: Update MSYS2**
+**Step 3: Update MSYS2**
 Open **"MSYS2 MinGW 64-bit"** terminal from the Start Menu and run:
 ```bash
 pacman -Syu
@@ -84,29 +92,29 @@ Close and reopen the terminal, then run:
 pacman -Su
 ```
 
-**Step 3: Install Development Tools**
+**Step 4: Install Development Tools**
 In the **MSYS2 MinGW 64-bit terminal**, run:
 ```bash
 pacman -S mingw-w64-x86_64-gcc mingw-w64-x86_64-gtk3 mingw-w64-x86_64-pkg-config base-devel
 ```
 
-**Step 4: Navigate to Project**
+**Step 5: Navigate to Project**
 In the **MSYS2 MinGW 64-bit terminal**, run:
 ```bash
-cd {path_to_project_directory}
+cd {path_before_project_folder}/Kirchhoff-and-TSP-circuit-simulator
 ```
 
 ---
 
 ### Build & Run
 
-**Step 5: Compile the Application**
+**Step 6: Compile the Application**
 In the **MSYS2 MinGW 64-bit terminal**, run:
 ```bash
 make
 ```
 
-**Step 6: Run the Application**
+**Step 7: Run the Application**
 In the **MSYS2 MinGW 64-bit terminal**, run:
 ```bash
 ./run_main
@@ -333,4 +341,5 @@ Planned improvements:
 For bug reports, feature requests, or questions:
 - **Issues**: Open an issue on GitHub
 - **Email**: [atharvdrahate@gmail.com]
+
 ---
