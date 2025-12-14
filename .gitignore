@@ -1,8 +1,1 @@
-.env
-
-env
-/env
-
-__pycache__
-
-.vscode
+run_guidelines.md
