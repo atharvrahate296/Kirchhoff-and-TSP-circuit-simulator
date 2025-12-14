@@ -315,22 +315,6 @@ This project is for educational purposes and is not licensed for commercial use.
 
 ---
 
-## Screenshots
-
-### Main Menu
-![Main Menu](screenshots/main_menu.png)
-*Clean interface for selecting between Kirchhoff's Circuit Simulator and TSP Solver*
-
-### Kirchhoff's Circuit Simulator
-![Circuit Simulator](screenshots/kirchhoff_simulator.png)
-*Interactive circuit design with real-time analysis and current visualization*
-
-### TSP Simulator
-![TSP Simulator](screenshots/tsp_simulator.png)
-*Visual comparison of different TSP algorithms with step-by-step path display*
-
----
-
 ## Future Enhancements
 
 Planned improvements:
@@ -348,9 +332,5 @@ Planned improvements:
 
 For bug reports, feature requests, or questions:
 - **Issues**: Open an issue on GitHub
-- **Email**: [your-email@example.com]
-- **Documentation**: See `WINDOWS_SETUP.md` for detailed Windows instructions
-
+- **Email**: [atharvdrahate@gmail.com]
 ---
-
-**Note**: This C implementation maintains complete feature parity with the original Python version while providing significantly better performance and a native operating system look and feel.
