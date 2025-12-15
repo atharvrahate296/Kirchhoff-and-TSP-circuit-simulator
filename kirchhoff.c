@@ -102,17 +102,22 @@ static void redraw_circuit(KirchhoffData *data) {
     GtkAllocation allocation;
     gtk_widget_get_allocation(data->canvas, &allocation);
     
+    // Only redraw if canvas has valid size
+    if (allocation.width <= 1 || allocation.height <= 1) {
+        return;
+    }
+    
     if (data->surface) {
         cairo_surface_destroy(data->surface);
     }
     
     data->surface = cairo_image_surface_create(CAIRO_FORMAT_ARGB32,
-                                                allocation.width,
-                                                allocation.height);
+                                               allocation.width,
+                                               allocation.height);
     cairo_t *cr = cairo_create(data->surface);
     
     // White background
-    cairo_set_source_rgb(cr, 1, 1, 1);
+    cairo_set_source_rgb(cr, 1.0, 1.0, 1.0);
     cairo_paint(cr);
     
     // Draw components
@@ -128,13 +133,21 @@ static void redraw_circuit(KirchhoffData *data) {
         double x2 = data->nodes[comp->node2].x;
         double y2 = data->nodes[comp->node2].y;
         
-        cairo_set_line_width(cr, 3);
-        cairo_set_source_rgb(cr, 0, 0, 0);
+        // Draw edge with better visibility and anti-aliasing
+        cairo_set_line_width(cr, 2.5);
+        cairo_set_source_rgb(cr, 0.0, 0.0, 0.0); // Strictly BLACK edges
         cairo_move_to(cr, x1, y1);
         cairo_line_to(cr, x2, y2);
         cairo_stroke(cr);
         
-        // Draw label
+        // Add subtle outer glow for better visibility
+        cairo_set_line_width(cr, 3.5);
+        cairo_set_source_rgba(cr, 0.0, 0.0, 0.0, 0.2);
+        cairo_move_to(cr, x1, y1);
+        cairo_line_to(cr, x2, y2);
+        cairo_stroke(cr);
+        
+        // Prepare label
         double mid_x = (x1 + x2) / 2;
         double mid_y = (y1 + y2) / 2;
         
@@ -145,17 +158,34 @@ static void redraw_circuit(KirchhoffData *data) {
             sprintf(label, "%.1fV", comp->value);
         }
         
-        cairo_set_source_rgb(cr, 0, 0, 0);
+        // Font settings
+        cairo_text_extents_t extents;
         cairo_select_font_face(cr, "Times New Roman",
-                              CAIRO_FONT_SLANT_NORMAL,
-                              CAIRO_FONT_WEIGHT_BOLD);
-        cairo_set_font_size(cr, 11);
-        cairo_move_to(cr, mid_x - 20, mid_y - 15);
+                               CAIRO_FONT_SLANT_NORMAL,
+                               CAIRO_FONT_WEIGHT_BOLD);
+        
+        cairo_set_font_size(cr, 15);
+        cairo_text_extents(cr, label, &extents);
+        
+        // Calculate perpendicular offset to avoid edge overlap
+        double dx = x2 - x1;
+        double dy = y2 - y1;
+        double len = sqrt(dx*dx + dy*dy);
+        
+        // Offset the text slightly more since we don't have the white box anymore
+        double offset_x = -dy / len * 25; 
+        double offset_y = dx / len * 25;
+        
+        // --- REMOVED THE WHITE RECTANGLE BLOCK HERE ---
+
+        // Draw text (Directly, no border)
+        cairo_set_source_rgb(cr, 0.0, 0.0, 0.0);
+        cairo_move_to(cr, mid_x + offset_x - extents.width/2, mid_y + offset_y + 5);
         cairo_show_text(cr, label);
         
         // Draw current arrow if calculated
         if (fabs(comp->current) > 0.001) {
-            cairo_set_source_rgb(cr, 0.153, 0.682, 0.376); // #27ae60
+            cairo_set_source_rgb(cr, 0.153, 0.682, 0.376); // #27ae60 (Green Arrow)
             
             double angle = atan2(y2 - y1, x2 - x1);
             double arrow_len = 15;
@@ -184,6 +214,8 @@ static void redraw_circuit(KirchhoffData *data) {
             // Current value
             sprintf(label, "%.2fA", fabs(comp->current));
             cairo_set_font_size(cr, 9);
+            cairo_set_source_rgb(cr, 0.0, 0.0, 0.0); // Changed to BLACK so it's visible without background
+            // Move current label slightly to clear larger nodes/components
             cairo_move_to(cr, mid_x - 15, mid_y + 15);
             cairo_show_text(cr, label);
         }
@@ -196,10 +228,11 @@ static void redraw_circuit(KirchhoffData *data) {
         double x = data->nodes[i].x;
         double y = data->nodes[i].y;
         
-        // Circle
+        // Circle (INCREASED SIZE)
         cairo_set_source_rgb(cr, 0.506, 0.780, 0.514); // #81c784
-        cairo_arc(cr, x, y, 9, 0, 2 * M_PI);
+        cairo_arc(cr, x, y, 14, 0, 2 * M_PI); // Radius 14
         cairo_fill_preserve(cr);
+        
         cairo_set_source_rgb(cr, 0.333, 0.545, 0.184); // #558b2f
         cairo_set_line_width(cr, 2);
         cairo_stroke(cr);
@@ -208,12 +241,13 @@ static void redraw_circuit(KirchhoffData *data) {
         char label[10];
         sprintf(label, "N%d", i);
         
-        cairo_set_source_rgb(cr, 0, 0, 0);
+        cairo_set_source_rgb(cr, 1.0, 1.0, 1.0); // White text
         cairo_select_font_face(cr, "Times New Roman",
-                              CAIRO_FONT_SLANT_NORMAL,
-                              CAIRO_FONT_WEIGHT_BOLD);
+                               CAIRO_FONT_SLANT_NORMAL,
+                               CAIRO_FONT_WEIGHT_BOLD);
         cairo_set_font_size(cr, 12);
-        cairo_move_to(cr, x - 10, y - 22);
+        // Adjusted label offset for larger node
+        cairo_move_to(cr, x - 10, y - 28); 
         cairo_show_text(cr, label);
     }
     
@@ -224,8 +258,28 @@ static void redraw_circuit(KirchhoffData *data) {
 static gboolean on_draw(GtkWidget *widget, cairo_t *cr, gpointer data) {
     KirchhoffData *k_data = (KirchhoffData *)data;
     
+    // If no surface yet, create one with white background
+    if (!k_data->surface) {
+        GtkAllocation allocation;
+        gtk_widget_get_allocation(widget, &allocation);
+        
+        if (allocation.width > 1 && allocation.height > 1) {
+            k_data->surface = cairo_image_surface_create(CAIRO_FORMAT_ARGB32,
+                                                         allocation.width,
+                                                         allocation.height);
+            cairo_t *temp_cr = cairo_create(k_data->surface);
+            cairo_set_source_rgb(temp_cr, 1.0, 1.0, 1.0);
+            cairo_paint(temp_cr);
+            cairo_destroy(temp_cr);
+        }
+    }
+    
     if (k_data->surface) {
         cairo_set_source_surface(cr, k_data->surface, 0, 0);
+        cairo_paint(cr);
+    } else {
+        // Fallback: paint white background directly
+        cairo_set_source_rgb(cr, 1.0, 1.0, 1.0);
         cairo_paint(cr);
     }
     
@@ -234,13 +288,13 @@ static gboolean on_draw(GtkWidget *widget, cairo_t *cr, gpointer data) {
 
 static int find_nearest_node(KirchhoffData *data, double x, double y) {
     int nearest = -1;
-    double min_dist = 20;
+    double min_dist = 25; // Increased hit-box from 20 to 25
     
     for (int i = 0; i < MAX_NODES; i++) {
         if (!data->node_exists[i]) continue;
         
         double dist = sqrt((x - data->nodes[i].x) * (x - data->nodes[i].x) +
-                          (y - data->nodes[i].y) * (y - data->nodes[i].y));
+                           (y - data->nodes[i].y) * (y - data->nodes[i].y));
         if (dist < min_dist) {
             min_dist = dist;
             nearest = i;
@@ -262,17 +316,36 @@ static gboolean on_button_press(GtkWidget *widget, GdkEventButton *event, gpoint
         
         if (node >= 0) {
             if (k_data->selected_node == -1) {
+                // First node selected
                 k_data->selected_node = node;
             } else {
+                // Second node selected - connect them
                 if (node != k_data->selected_node) {
+                    
+                    // --- FIX STARTS HERE ---
+                    // 1. Get text from the entry box
+                    const char *val_text = gtk_entry_get_text(GTK_ENTRY(k_data->value_entry));
+                    
+                    // 2. Convert string to double
+                    double current_val = atof(val_text);
+                    
+                    // 3. Update the data structure (optional validation)
+                    if (current_val != 0.0) {
+                        k_data->component_value = current_val;
+                    }
+                    // --- FIX ENDS HERE ---
+
                     // Add component
                     if (k_data->component_count < MAX_COMPONENTS) {
                         Component *comp = &k_data->components[k_data->component_count];
                         comp->node1 = k_data->selected_node;
                         comp->node2 = node;
+                        
+                        // Assign the freshly read value
                         comp->value = k_data->component_value;
+                        
                         comp->type = strcmp(k_data->mode, "add_resistor") == 0 ? 
-                                    COMP_RESISTOR : COMP_VOLTAGE_SOURCE;
+                                     COMP_RESISTOR : COMP_VOLTAGE_SOURCE;
                         comp->current = 0;
                         k_data->component_count++;
                         
@@ -309,6 +382,9 @@ static gboolean on_button_press(GtkWidget *widget, GdkEventButton *event, gpoint
 }
 
 void kirchhoff_calculate(KirchhoffData *data) {
+    const char *ground_text = gtk_entry_get_text(GTK_ENTRY(data->ground_entry));
+    data->ground_node = atoi(ground_text);
+
     if (data->node_count < 2 || data->component_count == 0) {
         GtkWidget *dialog = gtk_message_dialog_new(NULL,
             GTK_DIALOG_MODAL,
@@ -538,6 +614,36 @@ void kirchhoff_init(GtkWidget *parent_box) {
     data->ground_node = 0;
     data->selected_node = -1;
     
+    // Apply CSS styling for labels and buttons
+    // UPDATED: Added specific selectors for :active, :checked, :hover, :focus
+    // to ensure the button stays white with black text in all states.
+    GtkCssProvider *css_provider = gtk_css_provider_new();
+    gtk_css_provider_load_from_data(css_provider,
+        /* Global label text is white (for your dashboard text) */
+        "label { color: #ffffff; }"
+        
+        /* CONSTANT WHITE BUTTONS */
+        "button, button:active, button:checked, button:hover, button:focus, button:backdrop {"
+        "   background-color: #ffffff;"
+        "   color: #000000;"
+        "   font-weight: bold;"
+        "   background-image: none;"
+        "   box-shadow: none;"
+        "   text-shadow: none;"
+        "   border-color: #888888;"
+        "}"
+        
+        /* SAFETY FIX: Ensure text *inside* buttons is explicitly black */
+        "button label { color: #000000; }"
+        
+        "textview, text { background-color: #000000; color: #ffffff; }",
+        -1, NULL);
+    
+    GdkScreen *screen = gdk_screen_get_default();
+    gtk_style_context_add_provider_for_screen(screen,
+        GTK_STYLE_PROVIDER(css_provider),
+        GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
+    
     // Main container
     GtkWidget *main_container = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 10);
     gtk_box_pack_start(GTK_BOX(parent_box), main_container, TRUE, TRUE, 10);
@@ -611,6 +717,16 @@ void kirchhoff_init(GtkWidget *parent_box) {
     gtk_text_view_set_editable(GTK_TEXT_VIEW(data->results_text), FALSE);
     gtk_text_view_set_wrap_mode(GTK_TEXT_VIEW(data->results_text), GTK_WRAP_WORD);
     gtk_container_add(GTK_CONTAINER(scrolled), data->results_text);
+    
+    // Style results text view with black background and white text
+    GtkCssProvider *text_css = gtk_css_provider_new();
+    gtk_css_provider_load_from_data(text_css,
+        "textview text { background-color: #000000; color: #ffffff; }",
+        -1, NULL);
+    gtk_style_context_add_provider(
+        gtk_widget_get_style_context(data->results_text),
+        GTK_STYLE_PROVIDER(text_css),
+        GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
     
     // Right panel - Canvas
     GtkWidget *canvas_frame = gtk_box_new(GTK_ORIENTATION_VERTICAL, 5);

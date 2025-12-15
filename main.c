@@ -35,7 +35,7 @@ static void create_main_menu(AppData *app) {
     }
     g_list_free(children);
     
-    // Set window background
+    // Set window background and Global Button Styles
     GtkCssProvider *provider = gtk_css_provider_new();
     gtk_css_provider_load_from_data(provider,
         "window { background-color: #1c1c1c; }"
@@ -46,12 +46,22 @@ static void create_main_menu(AppData *app) {
         ".section-text { color: #c0c0c0; font-size: 14px; }"
         ".kirchhoff-title { color: #e57373; }"
         ".tsp-title { color: #81c784; }"
-        ".kirchhoff-button { background-color: #e57373; color: #1c1c1c; font-weight: bold; "
-        "border-radius: 5px; padding: 10px 20px; }"
-        ".kirchhoff-button:hover { background-color: #ef9a9a; }"
-        ".tsp-button { background-color: #81c784; color: #1c1c1c; font-weight: bold; "
-        "border-radius: 5px; padding: 10px 20px; }"
-        ".tsp-button:hover { background-color: #a5d6a7; }"
+        
+        /* GLOBAL BUTTON STYLING - Applies to ALL buttons */
+        "button, button:hover, button:active, button:checked, button:focus, button:backdrop {"
+        "   background-color: #ffffff;"  /* CONSTANT WHITE BACKGROUND */
+        "   color: #000000;"             /* CONSTANT BLACK TEXT */
+        "   font-weight: bold;"          /* BOLD TEXT */
+        "   border-radius: 5px;"
+        "   padding: 10px 20px;"
+        
+        /* These remove the default gray/blue theme effects */
+        "   background-image: none;"
+        "   box-shadow: none;"
+        "   text-shadow: none;"
+        "   border-color: #888888;"
+        "}"
+        
         ".footer-label { color: #707070; font-size: 10px; }",
         -1, NULL);
     
@@ -96,6 +106,8 @@ static void create_main_menu(AppData *app) {
     gtk_box_pack_start(GTK_BOX(kirchhoff_frame), kirchhoff_text, FALSE, FALSE, 20);
     
     GtkWidget *kirchhoff_button = gtk_button_new_with_label("Launch Kirchhoff Simulator");
+    /* No specific class needed anymore as global button style covers it, 
+       but keeping class add just in case you add specific logic later */
     gtk_style_context_add_class(gtk_widget_get_style_context(kirchhoff_button), "kirchhoff-button");
     g_signal_connect(kirchhoff_button, "clicked", G_CALLBACK(launch_kirchhoff), app);
     gtk_box_pack_start(GTK_BOX(kirchhoff_frame), kirchhoff_button, FALSE, FALSE, 30);

@@ -24,6 +24,7 @@ static void clear_all(GtkWidget *widget, gpointer user_data);
 static void solve_tsp_callback(GtkWidget *widget, gpointer user_data);
 static void mode_changed(GtkWidget *widget, gpointer user_data);
 static void auto_connect_toggled(GtkWidget *widget, gpointer user_data);
+static void algo_changed(GtkWidget *widget, gpointer user_data);
 
 static double distance_between(City *c1, City *c2) {
     return sqrt((c1->x - c2->x) * (c1->x - c2->x) + 
@@ -57,31 +58,38 @@ static void redraw_map(TSPData *data) {
     GtkAllocation allocation;
     gtk_widget_get_allocation(data->canvas, &allocation);
     
+    // Only redraw if canvas has valid size
+    if (allocation.width <= 1 || allocation.height <= 1) {
+        return;
+    }
+    
+    // Reset surface
     if (data->surface) {
         cairo_surface_destroy(data->surface);
     }
     
     data->surface = cairo_image_surface_create(CAIRO_FORMAT_ARGB32,
-                                                allocation.width,
-                                                allocation.height);
+                                               allocation.width,
+                                               allocation.height);
     cairo_t *cr = cairo_create(data->surface);
     
-    // White background
-    cairo_set_source_rgb(cr, 1, 1, 1);
+    // 1. Paint clean White background
+    cairo_set_source_rgb(cr, 1.0, 1.0, 1.0);
     cairo_paint(cr);
     
-    // Draw edges first
-    cairo_set_line_width(cr, 2);
-    cairo_set_source_rgb(cr, 0, 0, 0);
-    
+    // 2. Draw edges
     for (int i = 0; i < data->city_count; i++) {
         for (int j = i + 1; j < data->city_count; j++) {
             if (data->edge_exists[i][j]) {
+                
+                // A. Draw the solid Black line first
+                cairo_set_line_width(cr, 2.0);
+                cairo_set_source_rgb(cr, 0.0, 0.0, 0.0);  // Pure Black
                 cairo_move_to(cr, data->cities[i].x, data->cities[i].y);
                 cairo_line_to(cr, data->cities[j].x, data->cities[j].y);
                 cairo_stroke(cr);
                 
-                // Draw weight
+                // B. Draw Weight Text (No background box)
                 double mid_x = (data->cities[i].x + data->cities[j].x) / 2;
                 double mid_y = (data->cities[i].y + data->cities[j].y) / 2;
                 
@@ -89,27 +97,50 @@ static void redraw_map(TSPData *data) {
                 sprintf(weight_str, "%.0f", data->edges[i][j]);
                 
                 cairo_select_font_face(cr, "Times New Roman", 
-                                      CAIRO_FONT_SLANT_NORMAL,
-                                      CAIRO_FONT_WEIGHT_NORMAL);
-                cairo_set_font_size(cr, 11);
-                cairo_move_to(cr, mid_x - 10, mid_y - 5);
-                cairo_show_text(cr, weight_str);
+                                       CAIRO_FONT_SLANT_NORMAL,
+                                       CAIRO_FONT_WEIGHT_NORMAL);
+                cairo_set_font_size(cr, 15);
+                
+                cairo_text_extents_t extents;
+                cairo_text_extents(cr, weight_str, &extents);
+                
+                // Calculate offset to move text away from the line
+                double dx = data->cities[j].x - data->cities[i].x;
+                double dy = data->cities[j].y - data->cities[i].y;
+                double len = sqrt(dx*dx + dy*dy);
+                
+                if (len > 0) {
+                    // Increased offset factor from 18 to 22 for better spacing
+                    double offset_x = -dy / len * 22;
+                    double offset_y = dx / len * 22;
+                    
+                    // Note: cairo_rectangle/cairo_fill REMOVED here to stop hiding the line
+                    
+                    // Draw text in Black
+                    cairo_set_source_rgb(cr, 0.0, 0.0, 0.0);
+                    cairo_move_to(cr, 
+                                  mid_x + offset_x - extents.width/2, 
+                                  mid_y + offset_y + extents.height/2); // Adjustment for baseline
+                    cairo_show_text(cr, weight_str);
+                }
             }
         }
     }
     
-    // Draw cities
+    // 3. Draw cities (Nodes)
     for (int i = 0; i < data->city_count; i++) {
-        // Circle
+        // Green Circle Fill
         cairo_set_source_rgb(cr, 0.506, 0.780, 0.514); // #81c784
-        cairo_arc(cr, data->cities[i].x, data->cities[i].y, 12, 0, 2 * M_PI);
+        cairo_arc(cr, data->cities[i].x, data->cities[i].y, 18, 0, 2 * M_PI);
         cairo_fill_preserve(cr);
+        
+        // Dark Green Border
         cairo_set_source_rgb(cr, 0.333, 0.545, 0.184); // #558b2f
         cairo_set_line_width(cr, 2);
         cairo_stroke(cr);
         
-        // Name
-        cairo_set_source_rgb(cr, 0.11, 0.11, 0.11);
+        // City Name (White)
+        cairo_set_source_rgb(cr, 1.0, 1.0, 1.0);
         cairo_select_font_face(cr, "Times New Roman",
                               CAIRO_FONT_SLANT_NORMAL,
                               CAIRO_FONT_WEIGHT_BOLD);
@@ -118,8 +149,8 @@ static void redraw_map(TSPData *data) {
         cairo_text_extents_t extents;
         cairo_text_extents(cr, data->cities[i].name, &extents);
         cairo_move_to(cr, 
-                     data->cities[i].x - extents.width / 2,
-                     data->cities[i].y + extents.height / 2);
+                      data->cities[i].x - extents.width / 2,
+                      data->cities[i].y + extents.height / 2);
         cairo_show_text(cr, data->cities[i].name);
     }
     
@@ -154,10 +185,10 @@ static void draw_solution(TSPData *data) {
         
         cairo_move_to(cr, c2->x, c2->y);
         cairo_line_to(cr, arrow_x - 5 * cos(angle + M_PI/6), 
-                         arrow_y - 5 * sin(angle + M_PI/6));
+                          arrow_y - 5 * sin(angle + M_PI/6));
         cairo_move_to(cr, c2->x, c2->y);
         cairo_line_to(cr, arrow_x - 5 * cos(angle - M_PI/6), 
-                         arrow_y - 5 * sin(angle - M_PI/6));
+                          arrow_y - 5 * sin(angle - M_PI/6));
         cairo_stroke(cr);
         
         // Draw step number
@@ -167,7 +198,7 @@ static void draw_solution(TSPData *data) {
         char step[10];
         sprintf(step, "%d", i + 1);
         
-        cairo_set_source_rgb(cr, 0.11, 0.11, 0.11);
+        cairo_set_source_rgb(cr, 1.0, 1.0, 1.0);
         cairo_select_font_face(cr, "Times New Roman",
                               CAIRO_FONT_SLANT_NORMAL,
                               CAIRO_FONT_WEIGHT_BOLD);
@@ -184,10 +215,10 @@ static void draw_solution(TSPData *data) {
     cairo_arc(cr, start->x, start->y, 20, 0, 2 * M_PI);
     cairo_stroke(cr);
     
-    cairo_set_source_rgb(cr, 0.506, 0.780, 0.514);
+    cairo_set_source_rgb(cr, 1.0, 1.0, 1.0); // White
     cairo_select_font_face(cr, "Times New Roman",
-                          CAIRO_FONT_SLANT_NORMAL,
-                          CAIRO_FONT_WEIGHT_BOLD);
+                           CAIRO_FONT_SLANT_NORMAL,
+                           CAIRO_FONT_WEIGHT_BOLD);
     cairo_set_font_size(cr, 11);
     cairo_move_to(cr, start->x - 20, start->y + 35);
     cairo_show_text(cr, "START");
@@ -199,8 +230,28 @@ static void draw_solution(TSPData *data) {
 static gboolean on_draw(GtkWidget *widget, cairo_t *cr, gpointer data) {
     TSPData *tsp_data = (TSPData *)data;
     
+    // If no surface yet, create one with white background
+    if (!tsp_data->surface) {
+        GtkAllocation allocation;
+        gtk_widget_get_allocation(widget, &allocation);
+        
+        if (allocation.width > 1 && allocation.height > 1) {
+            tsp_data->surface = cairo_image_surface_create(CAIRO_FORMAT_ARGB32,
+                                                         allocation.width,
+                                                         allocation.height);
+            cairo_t *temp_cr = cairo_create(tsp_data->surface);
+            cairo_set_source_rgb(temp_cr, 1.0, 1.0, 1.0);
+            cairo_paint(temp_cr);
+            cairo_destroy(temp_cr);
+        }
+    }
+    
     if (tsp_data->surface) {
         cairo_set_source_surface(cr, tsp_data->surface, 0, 0);
+        cairo_paint(cr);
+    } else {
+        // Fallback: paint white background directly
+        cairo_set_source_rgb(cr, 1.0, 1.0, 1.0);
         cairo_paint(cr);
     }
     
@@ -219,10 +270,8 @@ static gboolean on_button_press(GtkWidget *widget, GdkEventButton *event, gpoint
         double min_dist = 25;
         
         for (int i = 0; i < tsp_data->city_count; i++) {
-            double dist = sqrt((event->x - tsp_data->cities[i].x) * 
-                             (event->x - tsp_data->cities[i].x) +
-                             (event->y - tsp_data->cities[i].y) * 
-                             (event->y - tsp_data->cities[i].y));
+            double dist = sqrt((event->x - tsp_data->cities[i].x) * (event->x - tsp_data->cities[i].x) +
+                             (event->y - tsp_data->cities[i].y) * (event->y - tsp_data->cities[i].y));
             if (dist < min_dist) {
                 min_dist = dist;
                 nearest = i;
@@ -437,6 +486,28 @@ void tsp_init(GtkWidget *parent_box) {
     data->custom_weight = 10.0;
     data->selected_city_idx = -1;
     
+    // Apply CSS styling
+    GtkCssProvider *css_provider = gtk_css_provider_new();
+    gtk_css_provider_load_from_data(css_provider,
+        "label { color: #ffffff; }"
+        "button, button:active, button:checked, button:hover, button:focus, button:backdrop {"
+        "   background-color: #ffffff;"  
+        "   color: #000000;"             
+        "   font-weight: bold;"          
+        "   background-image: none;"    
+        "   box-shadow: none;"           
+        "   text-shadow: none;"          
+        "   border-color: #888888;"      
+        "}"
+        "button label { color: #000000; }"
+        "textview, text { background-color: #000000; color: #ffffff; }",
+        -1, NULL);
+    
+    GdkScreen *screen = gdk_screen_get_default();
+    gtk_style_context_add_provider_for_screen(screen,
+        GTK_STYLE_PROVIDER(css_provider),
+        GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
+    
     // Main container
     GtkWidget *main_container = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 10);
     gtk_box_pack_start(GTK_BOX(parent_box), main_container, TRUE, TRUE, 10);
@@ -509,11 +580,24 @@ void tsp_init(GtkWidget *parent_box) {
     gtk_text_view_set_wrap_mode(GTK_TEXT_VIEW(data->results_text), GTK_WRAP_WORD);
     gtk_container_add(GTK_CONTAINER(scrolled), data->results_text);
     
+    GtkCssProvider *text_css = gtk_css_provider_new();
+    gtk_css_provider_load_from_data(text_css,
+        "textview text { background-color: #000000; color: #ffffff; }",
+        -1, NULL);
+    gtk_style_context_add_provider(
+        gtk_widget_get_style_context(data->results_text),
+        GTK_STYLE_PROVIDER(text_css),
+        GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
+    
     // Right panel - Canvas
     GtkWidget *canvas_frame = gtk_box_new(GTK_ORIENTATION_VERTICAL, 5);
     gtk_box_pack_start(GTK_BOX(main_container), canvas_frame, TRUE, TRUE, 10);
     
-    GtkWidget *canvas_label = gtk_label_new("TSP Canvas - Click to add cities");
+    // Corrected Label Name and Centering
+    GtkWidget *canvas_label = gtk_label_new("Circuit Canvas - Click to add nodes, then connect components");
+    gtk_widget_set_halign(canvas_label, GTK_ALIGN_CENTER);
+    gtk_label_set_justify(GTK_LABEL(canvas_label), GTK_JUSTIFY_CENTER);
+    
     gtk_box_pack_start(GTK_BOX(canvas_frame), canvas_label, FALSE, FALSE, 5);
     
     data->canvas = gtk_drawing_area_new();
