@@ -114,8 +114,6 @@ static void redraw_map(TSPData *data) {
                     double offset_x = -dy / len * 22;
                     double offset_y = dx / len * 22;
                     
-                    // Note: cairo_rectangle/cairo_fill REMOVED here to stop hiding the line
-                    
                     // Draw text in Black
                     cairo_set_source_rgb(cr, 0.0, 0.0, 0.0);
                     cairo_move_to(cr, 
@@ -129,6 +127,9 @@ static void redraw_map(TSPData *data) {
     
     // 3. Draw cities (Nodes)
     for (int i = 0; i < data->city_count; i++) {
+        // [FIX 1] Start a fresh path to prevent "Green Line" connecting previous text to this circle
+        cairo_new_path(cr);
+
         // Green Circle Fill
         cairo_set_source_rgb(cr, 0.506, 0.780, 0.514); // #81c784
         cairo_arc(cr, data->cities[i].x, data->cities[i].y, 18, 0, 2 * M_PI);
@@ -152,6 +153,9 @@ static void redraw_map(TSPData *data) {
                       data->cities[i].x - extents.width / 2,
                       data->cities[i].y + extents.height / 2);
         cairo_show_text(cr, data->cities[i].name);
+
+        // [FIX 2] Reset color to BLACK after drawing the node to prevent color bleeding
+        cairo_set_source_rgb(cr, 0.0, 0.0, 0.0);
     }
     
     cairo_destroy(cr);

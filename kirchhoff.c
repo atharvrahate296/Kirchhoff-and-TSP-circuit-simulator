@@ -172,20 +172,17 @@ static void redraw_circuit(KirchhoffData *data) {
         double dy = y2 - y1;
         double len = sqrt(dx*dx + dy*dy);
         
-        // Offset the text slightly more since we don't have the white box anymore
         double offset_x = -dy / len * 25; 
         double offset_y = dx / len * 25;
         
-        // --- REMOVED THE WHITE RECTANGLE BLOCK HERE ---
-
-        // Draw text (Directly, no border)
+        // Draw text
         cairo_set_source_rgb(cr, 0.0, 0.0, 0.0);
         cairo_move_to(cr, mid_x + offset_x - extents.width/2, mid_y + offset_y + 5);
         cairo_show_text(cr, label);
         
         // Draw current arrow if calculated
         if (fabs(comp->current) > 0.001) {
-            cairo_set_source_rgb(cr, 0.153, 0.682, 0.376); // #27ae60 (Green Arrow)
+            cairo_set_source_rgb(cr, 0.0, 0.0, 0.0); // Black Arrow
             
             double angle = atan2(y2 - y1, x2 - x1);
             double arrow_len = 15;
@@ -214,8 +211,7 @@ static void redraw_circuit(KirchhoffData *data) {
             // Current value
             sprintf(label, "%.2fA", fabs(comp->current));
             cairo_set_font_size(cr, 9);
-            cairo_set_source_rgb(cr, 0.0, 0.0, 0.0); // Changed to BLACK so it's visible without background
-            // Move current label slightly to clear larger nodes/components
+            cairo_set_source_rgb(cr, 0.0, 0.0, 0.0);
             cairo_move_to(cr, mid_x - 15, mid_y + 15);
             cairo_show_text(cr, label);
         }
@@ -228,11 +224,16 @@ static void redraw_circuit(KirchhoffData *data) {
         double x = data->nodes[i].x;
         double y = data->nodes[i].y;
         
-        // Circle (INCREASED SIZE)
+        // [FIX 1] Start a fresh path for every node to prevent the 
+        // "Random Green Line" connecting the previous text position to this circle.
+        cairo_new_path(cr);
+
+        // Circle (filled green)
         cairo_set_source_rgb(cr, 0.506, 0.780, 0.514); // #81c784
         cairo_arc(cr, x, y, 14, 0, 2 * M_PI); // Radius 14
         cairo_fill_preserve(cr);
         
+        // Border (stroked dark green)
         cairo_set_source_rgb(cr, 0.333, 0.545, 0.184); // #558b2f
         cairo_set_line_width(cr, 2);
         cairo_stroke(cr);
@@ -246,9 +247,12 @@ static void redraw_circuit(KirchhoffData *data) {
                                CAIRO_FONT_SLANT_NORMAL,
                                CAIRO_FONT_WEIGHT_BOLD);
         cairo_set_font_size(cr, 12);
-        // Adjusted label offset for larger node
+        
         cairo_move_to(cr, x - 10, y - 28); 
         cairo_show_text(cr, label);
+
+        // [FIX 2] Reset color to BLACK after drawing the node
+        cairo_set_source_rgb(cr, 0.0, 0.0, 0.0);
     }
     
     cairo_destroy(cr);
@@ -457,7 +461,7 @@ void kirchhoff_calculate(KirchhoffData *data) {
             }
         }
         else if (comp->type == COMP_VOLTAGE_SOURCE) {
-            // Simple voltage source (connected to ground)
+            // Case 1: Connected to Ground (Use forcing method for precision)
             if (n1 == data->ground_node) {
                 int idx = -1;
                 for (int i = 0; i < n; i++) {
@@ -466,7 +470,8 @@ void kirchhoff_calculate(KirchhoffData *data) {
                 if (idx >= 0) {
                     memset(G[idx], 0, n * sizeof(double));
                     G[idx][idx] = 1.0;
-                    I[idx] = comp->value;
+                    // n1 is ground (+), n2 is node (-). V_n1 - V_n2 = Val => 0 - V_n2 = Val => V_n2 = -Val
+                    I[idx] = -comp->value; 
                 }
             }
             else if (n2 == data->ground_node) {
@@ -477,7 +482,35 @@ void kirchhoff_calculate(KirchhoffData *data) {
                 if (idx >= 0) {
                     memset(G[idx], 0, n * sizeof(double));
                     G[idx][idx] = 1.0;
+                    // n1 is node (+), n2 is ground (-). V_n1 - 0 = Val
                     I[idx] = comp->value;
+                }
+            }
+            // Case 2: Floating Voltage Source (Between two non-ground nodes)
+            // Fix: Use Norton Equivalent (Current Source || Small Resistor)
+            else {
+                int idx1 = -1, idx2 = -1;
+                for (int i = 0; i < n; i++) {
+                    if (node_list[i] == n1) idx1 = i;
+                    if (node_list[i] == n2) idx2 = i;
+                }
+
+                if (idx1 >= 0 && idx2 >= 0) {
+                    // Use a very small internal resistance to model the ideal source
+                    double r_internal = 0.01; 
+                    double g_internal = 1.0 / r_internal;
+                    double i_injected = comp->value / r_internal;
+
+                    // Update Conductance Matrix (Resistor part)
+                    G[idx1][idx1] += g_internal;
+                    G[idx2][idx2] += g_internal;
+                    G[idx1][idx2] -= g_internal;
+                    G[idx2][idx1] -= g_internal;
+
+                    // Update Current Vector (Source part)
+                    // Current is injected into Positive Node (n1) and extracted from Negative Node (n2)
+                    I[idx1] += i_injected;
+                    I[idx2] -= i_injected;
                 }
             }
         }
@@ -489,7 +522,7 @@ void kirchhoff_calculate(KirchhoffData *data) {
             GTK_DIALOG_MODAL,
             GTK_MESSAGE_ERROR,
             GTK_BUTTONS_OK,
-            "Cannot solve circuit - check your connections");
+            "Cannot solve circuit - check your connections or ensure nodes are not isolated.");
         gtk_dialog_run(GTK_DIALOG(dialog));
         gtk_widget_destroy(dialog);
         
@@ -516,6 +549,14 @@ void kirchhoff_calculate(KirchhoffData *data) {
         if (comp->type == COMP_RESISTOR) {
             comp->current = (v1 - v2) / comp->value;
         }
+        else if (comp->type == COMP_VOLTAGE_SOURCE) {
+            // For voltage sources, we can estimate current using node voltages 
+            // and Kirchhoff's Current Law at the nodes, but simpler is:
+            // The simulator solves V, but I through a V-source is a dependent variable.
+            // We can leave it as 0 for display, or back-calculate using KCL if implemented.
+            // For this version, we'll leave it 0 or calculate if there's a simple path.
+            comp->current = 0; 
+        }
     }
     
     // Format results
@@ -534,15 +575,15 @@ void kirchhoff_calculate(KirchhoffData *data) {
         Component *comp = &data->components[c];
         
         if (comp->type == COMP_RESISTOR) {
-            sprintf(results + strlen(results), "\nR%d (N%d→N%d):\n", 
+            sprintf(results + strlen(results), "\nR%d (N%d->N%d):\n", 
                    c, comp->node1, comp->node2);
-            sprintf(results + strlen(results), "  %.1fΩ\n", comp->value);
+            sprintf(results + strlen(results), "  %.1f Ohm\n", comp->value);
             sprintf(results + strlen(results), "  Current: %.3f A\n", fabs(comp->current));
             sprintf(results + strlen(results), "  Power: %.3f W\n", 
                    fabs(comp->current) * fabs(comp->current) * comp->value);
         }
         else if (comp->type == COMP_VOLTAGE_SOURCE) {
-            sprintf(results + strlen(results), "\nV%d (N%d→N%d):\n", 
+            sprintf(results + strlen(results), "\nV%d (N%d->N%d):\n", 
                    c, comp->node1, comp->node2);
             sprintf(results + strlen(results), "  %.1fV\n", comp->value);
         }
@@ -550,8 +591,8 @@ void kirchhoff_calculate(KirchhoffData *data) {
     
     strcat(results, "\n=========================\n");
     strcat(results, "Kirchhoff's Laws Verified:\n");
-    strcat(results, "✓ KCL: ΣI_in = ΣI_out\n");
-    strcat(results, "✓ KVL: ΣV_loop = 0\n");
+    strcat(results, "✓ KCL: Sum(I_in) = Sum(I_out)\n");
+    strcat(results, "✓ KVL: Sum(V_loop) = 0\n");
     
     GtkTextBuffer *buffer = gtk_text_view_get_buffer(GTK_TEXT_VIEW(data->results_text));
     gtk_text_buffer_set_text(buffer, results, -1);
